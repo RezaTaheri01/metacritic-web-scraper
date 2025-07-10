@@ -1,6 +1,13 @@
+from dotenv import load_dotenv
+import requests
+from django.core.files.base import ContentFile
+from urllib.parse import urlparse
+import os
+from PIL import Image
+from io import BytesIO
+
 from datetime import datetime
 from bs4 import BeautifulSoup
-import requests
 import logging
 import time
 
@@ -14,16 +21,20 @@ django.setup()
 from games.models import Game, Page
 # endregion
 
+load_dotenv()  # This loads variables from .env into os.environ
+
+api_key = os.getenv("RAWG_API_KEY")
+max_size_bytes = 1 * 1024 * 512  # 1MB
 base_url = "https://www.metacritic.com"
-base_image_url = "https://www.igdb.com/games/"
+base_image_url = 'https://api.rawg.io/api/games?key={}&search="{}"&page_size={}'
 games_url = "https://www.metacritic.com/browse/game/?releaseYearMin=1958&releaseYearMax=2025&page={}"
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
 }
-crawl_delay = 60
-last_page = 568
-max_retries = 200
+crawl_delay = 30
+last_page = 574
+max_retries = 200_000
 
 # Configure basic logging to a file
 logging.basicConfig(filename='scraper.log', level=logging.INFO,
@@ -77,12 +88,60 @@ def get_games_page_html(url):
 
 
 # Single Product details
+def get_game_image(title: str, slug: str, game):
+    def fetch_image(query):
+        url = base_image_url.format(api_key, query, 1)
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            results = data.get("results", [])
+            if results:
+                return results[0].get("background_image")
+        return None
+
+    image_url = fetch_image(title) or fetch_image(slug)
+
+    if image_url:
+        img_response = requests.get(image_url)
+        if img_response.status_code == 200:
+            original_size = len(img_response.content)
+            logger.info(f"📦{title} Original image size: {original_size / 1024:.2f} KB")
+
+            if original_size > max_size_bytes:
+                try:
+                    # Open image with Pillow
+                    img = Image.open(BytesIO(img_response.content))
+                    
+                    # Resize (optional): reduce dimensions (e.g. max width = 800)
+                    max_width = 1920
+                    if img.width > max_width:
+                        height = int((max_width / img.width) * img.height)
+                        img = img.resize((max_width, height), Image.Resampling.LANCZOS)
+
+                    # Compress and save to buffer
+                    buffer = BytesIO()
+                    img.save(buffer, format='JPEG', quality=70)
+                    buffer.seek(0)
+                    logger.info("📉 Image compressed because it was larger than 1MB")
+                    game.image.save(f"{slug}.jpg", ContentFile(buffer.read()), save=True)
+                except Exception as e:
+                    logger.error(f"❌ Error compressing image: {e}")
+            else:
+                # Image is small enough, save as-is
+                game.image.save(f"{slug}.jpg", ContentFile(img_response.content), save=True)
+                logger.info("✅ Image saved without compression (already under 1MB)")
+        else:
+            logger.error(f"❌ {title} Failed to download image from {image_url}")
+    else:
+        logger.error(f"❌ {title} No image found for '{title}' or '{slug}'")
+
+
 def get_game_detail(url, game: Game) -> bool:
     """
     Return True if data is extracted and assigned to the Game instance.
     Actual saving should be done outside this function.
     """
-    time.sleep(crawl_delay // 2)
+    time.sleep(crawl_delay)
 
     try:
         response = requests.get(url + "details/", headers=headers, timeout=10)
@@ -91,14 +150,16 @@ def get_game_detail(url, game: Game) -> bool:
         return False
 
     if response.status_code != 200:
-        logger.error(f"{url} - Failed to fetch details. Status code: {response.status_code}")
+        logger.error(
+            f"{url} - Failed to fetch details. Status code: {response.status_code}")
         return False
 
     try:
         soup = BeautifulSoup(response.text, "html.parser")
 
         # Extract Summary
-        summary_div = soup.find("div", class_="c-pageProductDetails_description")
+        summary_div = soup.find(
+            "div", class_="c-pageProductDetails_description")
         summary = summary_div.text.strip() if summary_div else "No description available."
         summary = summary.replace("Description:", "").strip()
 
@@ -106,19 +167,23 @@ def get_game_detail(url, game: Game) -> bool:
         platform_names = []
         platforms_div = soup.find('div', class_="c-gameDetails_Platforms")
         if platforms_div:
-            platform_tags = platforms_div.find_all('li', class_='c-gameDetails_listItem')
+            platform_tags = platforms_div.find_all(
+                'li', class_='c-gameDetails_listItem')
             platform_names = [p.text.strip() for p in platform_tags]
 
         # Extract release date
         release_date_str = ""
-        release_span = soup.find('span', class_='g-outer-spacing-left-medium-fluid')
+        release_span = soup.find(
+            'span', class_='g-outer-spacing-left-medium-fluid')
         if release_span:
             release_date_str = release_span.text.strip()
             try:
-                release_date = datetime.strptime(release_date_str, '%b %d, %Y').date()
+                release_date = datetime.strptime(
+                    release_date_str, '%b %d, %Y').date()
             except ValueError:
                 release_date = None
-                logger.warning(f"{url} - Failed to parse release date: {release_date_str}")
+                logger.warning(
+                    f"{url} - Failed to parse release date: {release_date_str}")
         else:
             release_date = None
 
@@ -126,7 +191,8 @@ def get_game_detail(url, game: Game) -> bool:
         developer = "Unknown"
         developer_div = soup.find('div', class_="c-gameDetails_Developer")
         if developer_div:
-            dev_tag = developer_div.find('a') or developer_div.find_all('span')[-1]
+            dev_tag = developer_div.find(
+                'a') or developer_div.find_all('span')[-1]
             if dev_tag:
                 developer = dev_tag.text.strip()
 
@@ -134,7 +200,8 @@ def get_game_detail(url, game: Game) -> bool:
         publisher = "Unknown"
         publisher_div = soup.find('div', class_="c-gameDetails_Distributor")
         if publisher_div:
-            pub_tag = publisher_div.find('a') or publisher_div.find_all('span')[-1]
+            pub_tag = publisher_div.find(
+                'a') or publisher_div.find_all('span')[-1]
             if pub_tag:
                 publisher = pub_tag.text.strip()
 
@@ -192,6 +259,8 @@ def get_game(url):
             f"Failed to fetch data. Status code: {response.status_code}")
         return
 
+    # get_game_image(title, slug, game)
+
     if not get_game_detail(url, game):
         return
 
@@ -206,15 +275,37 @@ def get_game(url):
     return True
 
 
+def complete_games_images():
+    games = Game.objects.filter(image="")
+    
+    if not games.exists():
+        return True  # All images already set
+    
+    for game in games:
+        try:
+            print(f"Fetching image for {game.slug}")
+            get_game_image(game.title, game.slug, game)
+            game.save()
+        except Exception as e:
+            logger.warning(f"Failed to fetch/save image for {game.slug}: {e}")
+    
+    # Recheck if all games now have images
+    return not Game.objects.filter(image="").exists()
+
+
 if __name__ == "__main__":
     retries = 0
+
     while retries < max_retries:
         try:
+            # if complete_games_images():
+            #     break
             main()
             break
         except Exception as e:
             logger.error(f"Error in main(): {e}")
             retries += 1
+
             if retries < max_retries:
                 logger.info(f"Retrying in {crawl_delay} seconds... ({retries}/{max_retries})")
                 time.sleep(crawl_delay)
