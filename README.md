@@ -1,2 +1,117 @@
-# metacritic-web-scraper
-Scrapes data periodically from Metacritic
+# 🎮 Metacritic Web Scraper (Django + RAWG)
+
+A robust, database-backed Python scraper that collects video game data from [Metacritic](https://www.metacritic.com) and enriches it with game images via the [RAWG API](https://rawg.io/apidocs). Built to integrate with Django ORM and handle image compression automatically.
+
+---
+
+## 📌 Features
+
+- Scrapes games from **Metacritic** (title, scores, summary, platform, release date, etc.)
+- Fetches game cover images via the **RAWG API**
+- Compresses large images (>1MB) before saving
+- Uses **Django ORM** for database integration
+- Includes **resume functionality** using a `Page` model
+- Logs scraping activity to `scraper.log`
+- Built-in retry and rate-limit mechanisms
+
+---
+
+## 🧱 Requirements
+
+- Python 3.9+
+- Django 3.2+
+- PostgreSQL or SQLite (via Django settings)
+- RAWG API Key (free to obtain from [RAWG.io](https://rawg.io/apidocs))
+- `Pillow`, `python-dotenv`, `beautifulsoup4`, etc.
+
+---
+
+## 🔧 Setup Instructions
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/RezaTaheri01/metacritic-web-scraper.git
+cd metacritic-web-scraper
+```
+
+### 2. Create Virtual Environment
+
+```bash
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+```
+
+### 3. Install Dependencies
+
+```bash
+cd scraper
+pip install -r req.txt
+```
+
+---
+
+## 🌱 Django Integration
+
+### 3. Apply Migrations
+
+```bash
+python manage.py makemigrations games
+python manage.py migrate
+```
+
+---
+
+## 🔐 RAWG API Key Setup
+
+Create a `.env` file at the root of the project:
+
+```
+RAWG_API_KEY=your_rawg_api_key_here
+```
+
+You can register for a free RAWG API key here: https://rawg.io/apidocs
+
+---
+
+## 🚀 Running the Scraper
+
+Run the script directly after activating your environment and ensuring Django settings are configured:
+
+```bash
+python scraper.py
+```
+
+You can toggle between fetching full data or just completing missing images:
+
+```python
+# Inside scraper.py (last lines)
+main()  # Uncomment this to fetch new pages
+# complete_games_images()  # This fills missing images only
+```
+
+---
+
+## 🗂️ Logs
+
+Scraping activity and errors are logged to:
+
+```
+scraper.log
+```
+
+---
+
+## 🛠️ Notes
+
+- The script obeys a 30-second crawl delay between each game to avoid rate-limiting.
+- If interrupted, scraping will resume from the last saved page (`Page` model).
+- Images larger than 1MB are compressed to JPEG before saving.
+
+---
+
+---
+
+## 🤝 Contributing
+
+Pull requests and issue reports are welcome! If you want to contribute improvements (e.g., support for reviews, genres, or more APIs), feel free to fork and send a PR.
