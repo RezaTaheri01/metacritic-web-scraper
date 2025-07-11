@@ -1,3 +1,4 @@
+# TODO: async get_games_images(multi process)
 from dotenv import load_dotenv
 import requests
 from django.core.files.base import ContentFile
@@ -5,6 +6,7 @@ from urllib.parse import urlparse
 import os
 from PIL import Image
 from io import BytesIO
+import argparse
 
 from datetime import datetime
 from bs4 import BeautifulSoup
@@ -34,7 +36,7 @@ headers = {
 }
 crawl_delay = 30
 last_page = 574
-max_retries = 200_000
+max_retries = 1_000
 
 # Configure basic logging to a file
 logging.basicConfig(filename='scraper.log', level=logging.INFO,
@@ -87,7 +89,7 @@ def get_games_page_html(url):
     return games
 
 
-# Single Product details
+# Images
 def get_game_image(title: str, slug: str, game):
     def fetch_image(query):
         url = base_image_url.format(api_key, query, 1)
@@ -136,7 +138,30 @@ def get_game_image(title: str, slug: str, game):
         logger.error(f"❌ {title} No image found for '{title}' or '{slug}'")
 
 
-def get_game_detail(url, game: Game) -> bool:
+def complete_games_images():
+    games = Game.objects.filter(image="")
+    
+    if not games.exists():
+        return True  # All images already set
+    
+    for game in games:
+        try:
+            print(f"Fetching image for {game.slug}")
+            get_game_image(game.title, game.slug, game)
+            game.save()
+        except Exception as e:
+            logger.warning(f"Failed to fetch/save image for {game.slug}: {e}")
+    
+    # Recheck if all games now have images
+    return not Game.objects.filter(image="").exists()
+
+# Single Game details
+def save_failed_slugs(slug):
+    with open("failed_slugs.txt", "a") as f:
+        f.write(f"{slug}\n")
+    
+    
+def get_game_detail(url, slug, game: Game) -> bool:
     """
     Return True if data is extracted and assigned to the Game instance.
     Actual saving should be done outside this function.
@@ -147,9 +172,11 @@ def get_game_detail(url, game: Game) -> bool:
         response = requests.get(url + "details/", headers=headers, timeout=10)
     except requests.exceptions.RequestException as e:
         logger.error(f"{url} - Request failed: {e}")
+        save_failed_slugs(slug)
         return False
 
     if response.status_code != 200:
+        
         logger.error(
             f"{url} - Failed to fetch details. Status code: {response.status_code}")
         return False
@@ -215,6 +242,7 @@ def get_game_detail(url, game: Game) -> bool:
         return True
     except Exception as e:
         logger.error(f"{url} - Error parsing details: {e}")
+        save_failed_slugs(slug)
         return False
 
 
@@ -236,24 +264,39 @@ def get_game(url):
             title_div = soup.find("div", attrs={"data-testid": "hero-title"})
             title = title_div.text.strip() if title_div else "Unknown Title"
 
-            meta_score = soup.find(
-                "div", attrs={"data-testid": "critic-score-info"})
-            meta_score = meta_score.find("div", class_="c-siteReviewScore")
+            meta_score_block = soup.find("div", attrs={"data-testid": "critic-score-info"})
+            meta_score = (
+                meta_score_block.find("div", class_="c-siteReviewScore").text.strip()
+                if meta_score_block and meta_score_block.find("div", class_="c-siteReviewScore")
+                else None
+            )
 
-            meta_score_count = soup.find(
-                "a", attrs={"data-testid": "critic-path"})
-            meta_score_count = meta_score_count.find("span").text.split()[2]
+            meta_score_count_block = soup.find("a", attrs={"data-testid": "critic-path"})
+            meta_score_count = (
+                meta_score_count_block.find("span").text.split()[2]
+                if meta_score_count_block and meta_score_count_block.find("span")
+                else None
+            )
 
-            user_score = soup.find(
-                "div", attrs={"data-testid": "user-score-info"})
-            user_score = user_score.find("div", class_="c-siteReviewScore")
+            user_score_block = soup.find("div", attrs={"data-testid": "user-score-info"})
+            user_score = (
+                user_score_block.find("div", class_="c-siteReviewScore").text.strip()
+                if user_score_block and user_score_block.find("div", class_="c-siteReviewScore")
+                else None
+            )
 
-            user_score_count = soup.find(
-                "a", attrs={"data-testid": "user-path"})
-            user_score_count = user_score_count.find("span").text.split()[2]
+            user_score_count_block = soup.find("a", attrs={"data-testid": "user-path"})
+            user_score_count = (
+                user_score_count_block.find("span").text.split()[2]
+                if user_score_count_block and user_score_count_block.find("span")
+                else None
+            )
+
         except Exception as e:
             logger.error(f"{slug}\n{e}")
+            save_failed_slugs(slug)
             return
+
     else:
         logger.error(
             f"Failed to fetch data. Status code: {response.status_code}")
@@ -261,47 +304,38 @@ def get_game(url):
 
     # get_game_image(title, slug, game)
 
-    if not get_game_detail(url, game):
+    if not get_game_detail(url, slug, game):
         return
 
     game.title = title
     game.link = url
     game.slug = slug
-    game.meta_score = meta_score.text
+    game.meta_score = meta_score
     game.meta_score_count = meta_score_count
-    game.user_score = user_score.text
+    game.user_score = user_score
     game.user_score_count = user_score_count
     game.save()
     return True
 
 
-def complete_games_images():
-    games = Game.objects.filter(image="")
-    
-    if not games.exists():
-        return True  # All images already set
-    
-    for game in games:
-        try:
-            print(f"Fetching image for {game.slug}")
-            get_game_image(game.title, game.slug, game)
-            game.save()
-        except Exception as e:
-            logger.warning(f"Failed to fetch/save image for {game.slug}: {e}")
-    
-    # Recheck if all games now have images
-    return not Game.objects.filter(image="").exists()
-
-
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run scraper tasks.")
+    parser.add_argument(
+        "--images",
+        action="store_true",
+        help="Run image completion task instead of main()"
+    )
+    args = parser.parse_args()
+    
     retries = 0
-
     while retries < max_retries:
         try:
-            # if complete_games_images():
-            #     break
-            main()
-            break
+            if args.images:
+                if complete_games_images():
+                    break
+            else:
+                main()
+                break
         except Exception as e:
             logger.error(f"Error in main(): {e}")
             retries += 1
