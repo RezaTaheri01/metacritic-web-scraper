@@ -76,18 +76,14 @@ You can register for a free RAWG API key here: https://rawg.io/apidocs
 
 ## 🚀 Running the Scraper
 
-Run the script directly after activating your environment and ensuring Django settings are configured:
+You can toggle between fetching full data or just completing images:
 
-```bash
+```python
 python scraper.py
 ```
 
-You can toggle between fetching full data or just completing missing images:
-
 ```python
-# Inside scraper.py (last lines)
-main()  # Uncomment this to fetch new pages
-# complete_games_images()  # This fills missing images only
+python scraper.py --images
 ```
 
 ---
