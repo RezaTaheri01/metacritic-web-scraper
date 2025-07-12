@@ -83,12 +83,18 @@ You can register for a free RAWG API key here: https://rawg.io/apidocs
 
 You can toggle between fetching full data or just completing images:
 
+* Without image
 ```python
 python scraper.py
 ```
-
+* Just image
 ```python
 python scraper.py --images
+```
+
+* All
+```python
+python scraper.py --all
 ```
 
 ---
