@@ -77,6 +77,7 @@ def main():
 
         games = get_games_page_html(games_url.format(page))
         if games:
+            random.shuffle(games)
             print(games)
             for game in games:
                 print(f"Fetching {game}...")
@@ -91,6 +92,8 @@ def main():
 
 # List of games on each page
 def get_games_page_html(url):
+    time.sleep(random.uniform(crawl_delay, crawl_delay + delay_plus))
+    
     games = []
     response = requests.get(url, headers=headers, timeout=10)
 
@@ -374,7 +377,7 @@ if __name__ == "__main__":
             retries += 1
 
             if retries < max_retries:
-                logger.info(f"Retrying in {crawl_delay} seconds... ({retries}/{max_retries})")
+                logger.info(f"Retrying in {retry_delay} seconds... ({retries}/{max_retries})")
                 time.sleep(random.uniform(retry_delay, retry_delay + delay_plus))
             else:
                 logger.critical("Max retries exceeded. Exiting.")
