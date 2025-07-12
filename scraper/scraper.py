@@ -101,7 +101,7 @@ def get_game_image(title: str, slug: str, game):
                 return results[0].get("background_image")
         return None
 
-    image_url = fetch_image(title) or fetch_image(slug)
+    image_url = fetch_image(title) or fetch_image(slug) or fetch_image(slug.replace("-", " "))
 
     if image_url:
         img_response = requests.get(image_url)
@@ -135,11 +135,13 @@ def get_game_image(title: str, slug: str, game):
         else:
             logger.error(f"❌ {title} Failed to download image from {image_url}")
     else:
+        game.image_failed = True
+        game.save()
         logger.error(f"❌ {title} No image found for '{title}' or '{slug}'")
 
 
 def complete_games_images():
-    games = Game.objects.filter(image="")
+    games = Game.objects.filter(image="", image_failed=False)
     
     if not games.exists():
         return True  # All images already set

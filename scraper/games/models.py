@@ -32,6 +32,7 @@ class Game(models.Model):
 
     image = models.ImageField(upload_to='images/games',
                               verbose_name='Games Image', null=True, blank=True)
+    image_failed = models.BooleanField(default=False)
     bg_image = models.ImageField(
         upload_to='images/games/bg', verbose_name='Games BG Image', null=True, blank=True)
 
