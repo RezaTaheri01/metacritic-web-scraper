@@ -5,7 +5,7 @@ from .models import Game, Page
 
 @admin.register(Game)
 class GamesAdmin(admin.ModelAdmin):
-    ...
+    search_fields = ["title", "slug"] # Fields to search within
     
     
 @admin.register(Page)
