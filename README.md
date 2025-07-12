@@ -111,8 +111,14 @@ scraper.log
 
 ---
 
----
-
 ## 🤝 Contributing
 
 Pull requests and issue reports are welcome! If you want to contribute improvements (e.g., support for reviews, genres, or more APIs), feel free to fork and send a PR.
+
+---
+
+## ⚠️ Disclaimer:  
+This project is for educational and non-commercial hobby use only.  
+It is not affiliated with or endorsed by Metacritic.  
+Please respect the Terms of Service of any site you interact with.
+
