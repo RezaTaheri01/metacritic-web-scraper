@@ -1,21 +1,26 @@
-# TODO: async get_games_images(multi process)
-from dotenv import load_dotenv
-import requests
-from django.core.files.base import ContentFile
-from urllib.parse import urlparse
-import os
-from PIL import Image
-from io import BytesIO
-import argparse
+# TODO: async get_games_images (Multiprocessing) Done
 
-from datetime import datetime
-from bs4 import BeautifulSoup
-import logging
+import os
 import time
+import random
+import logging
+import requests
+import argparse
+from datetime import datetime
+
+from io import BytesIO
+from PIL import Image
+from bs4 import BeautifulSoup
+from dotenv import load_dotenv
+from urllib.parse import urlparse
+
+
+load_dotenv()  # This loads variables from .env into os.environ
+
 
 # region Django
 import django
-import os
+from django.core.files.base import ContentFile
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'scraper.settings')
 django.setup()
@@ -23,20 +28,29 @@ django.setup()
 from games.models import Game, Page
 # endregion
 
-load_dotenv()  # This loads variables from .env into os.environ
 
+# region Variables
 api_key = os.getenv("RAWG_API_KEY")
-max_size_bytes = 1 * 1024 * 512  # 1MB
+max_size_bytes = 1 * 1024 * 512  # 0.5MB
+
 base_url = "https://www.metacritic.com"
 base_image_url = 'https://api.rawg.io/api/games?key={}&search="{}"&page_size={}'
 games_url = "https://www.metacritic.com/browse/game/?releaseYearMin=1958&releaseYearMax=2025&page={}"
+
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
 }
-crawl_delay = 30
+
+retry_delay = 30
+crawl_delay = 12
+delay_plus = 4
+
 last_page = 574
 max_retries = 1_000
+
+# endregion
+
 
 # Configure basic logging to a file
 logging.basicConfig(filename='scraper.log', level=logging.INFO,
@@ -63,7 +77,7 @@ def main():
             for game in games:
                 print(f"Fetching {game}...")
                 if get_game(base_url + game) != False:
-                    time.sleep(crawl_delay)
+                    time.sleep(random.uniform(crawl_delay, crawl_delay + delay_plus))
 
         print(f"Page {page} fetched.")
 
@@ -89,7 +103,7 @@ def get_games_page_html(url):
     return games
 
 
-# Images
+# region Images
 def get_game_image(title: str, slug: str, game):
     def fetch_image(query):
         url = base_image_url.format(api_key, query, 1)
@@ -156,8 +170,10 @@ def complete_games_images():
     
     # Recheck if all games now have images
     return not Game.objects.filter(image="").exists()
+# endregion
 
-# Single Game details
+
+# region Get Single Game
 def save_failed_slugs(slug):
     with open("failed_slugs.txt", "a") as f:
         f.write(f"{slug}\n")
@@ -168,7 +184,7 @@ def get_game_detail(url, slug, game: Game) -> bool:
     Return True if data is extracted and assigned to the Game instance.
     Actual saving should be done outside this function.
     """
-    time.sleep(crawl_delay)
+    time.sleep(random.uniform(crawl_delay, crawl_delay + delay_plus))
 
     try:
         response = requests.get(url + "details/", headers=headers, timeout=10)
@@ -318,6 +334,7 @@ def get_game(url):
     game.user_score_count = user_score_count
     game.save()
     return True
+# endregion
 
 
 if __name__ == "__main__":
@@ -344,6 +361,6 @@ if __name__ == "__main__":
 
             if retries < max_retries:
                 logger.info(f"Retrying in {crawl_delay} seconds... ({retries}/{max_retries})")
-                time.sleep(crawl_delay)
+                time.sleep(random.uniform(retry_delay, retry_delay + delay_plus))
             else:
                 logger.critical("Max retries exceeded. Exiting.")
