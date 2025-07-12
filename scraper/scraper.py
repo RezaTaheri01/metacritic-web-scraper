@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from urllib.parse import urlparse
 
+from concurrent.futures import ThreadPoolExecutor
 
 load_dotenv()  # This loads variables from .env into os.environ
 
@@ -49,6 +50,8 @@ delay_plus = 4
 last_page = 574
 max_retries = 1_000
 
+# Global thread executor (reuse across calls)
+executor = ThreadPoolExecutor(max_workers=2)  # You can adjust the worker count
 # endregion
 
 
@@ -320,7 +323,8 @@ def get_game(url):
             f"Failed to fetch data. Status code: {response.status_code}")
         return
 
-    # get_game_image(title, slug, game)
+    if not game.image and not game.image_failed:
+        executor.submit(get_game_image, title, slug, game)
 
     if not get_game_detail(url, slug, game):
         return
