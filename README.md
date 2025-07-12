@@ -60,6 +60,11 @@ python manage.py makemigrations games
 python manage.py migrate
 ```
 
+### 4. Create Super User
+```bash
+python manage.py createsuperuser
+```
+
 ---
 
 ## 🔐 RAWG API Key Setup
