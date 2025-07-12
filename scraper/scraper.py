@@ -49,6 +49,7 @@ delay_plus = 4
 
 last_page = 574
 max_retries = 1_000
+fetch_images = True
 
 # Global thread executor (reuse across calls)
 executor = ThreadPoolExecutor(max_workers=2)  # You can adjust the worker count
@@ -323,7 +324,7 @@ def get_game(url):
             f"Failed to fetch data. Status code: {response.status_code}")
         return
 
-    if not game.image and not game.image_failed:
+    if fetch_images and not game.image and not game.image_failed:
         executor.submit(get_game_image, title, slug, game)
 
     if not get_game_detail(url, slug, game):
@@ -348,6 +349,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Run image completion task instead of main()"
     )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Run main() with get_game_image"
+    )
     args = parser.parse_args()
     
     retries = 0
@@ -356,7 +362,11 @@ if __name__ == "__main__":
             if args.images:
                 if complete_games_images():
                     break
-            else:
+            elif args.all:
+                main()
+                break
+            else: # Without images
+                fetch_images = False
                 main()
                 break
         except Exception as e:
