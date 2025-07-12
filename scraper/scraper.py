@@ -111,7 +111,7 @@ def get_games_page_html(url):
 
 
 # region Images
-def get_game_image(title: str, slug: str, game):
+def get_game_image(title: str, slug: str):
     def fetch_image(query):
         url = base_image_url.format(api_key, query, 1)
         response = requests.get(url)
@@ -123,6 +123,10 @@ def get_game_image(title: str, slug: str, game):
         return None
 
     image_url = fetch_image(title) or fetch_image(slug) or fetch_image(slug.replace("-", " "))
+    try:
+        game = Game.objects.get(slug=slug)
+    except:
+        return
 
     if image_url:
         img_response = requests.get(image_url)
@@ -145,14 +149,16 @@ def get_game_image(title: str, slug: str, game):
                     buffer = BytesIO()
                     img.save(buffer, format='JPEG', quality=70)
                     buffer.seek(0)
-                    logger.info("📉 Image compressed because it was larger than 1MB")
+                    logger.info("📉 Image compressed because it was larger than max_size_bytes")
                     game.image.save(f"{slug}.jpg", ContentFile(buffer.read()), save=True)
+                    game.save()
                 except Exception as e:
-                    logger.error(f"❌ Error compressing image: {e}")
+                    logger.error(f"❌ {slug} Error compressing image: {e}")
             else:
                 # Image is small enough, save as-is
                 game.image.save(f"{slug}.jpg", ContentFile(img_response.content), save=True)
-                logger.info("✅ Image saved without compression (already under 1MB)")
+                game.save()
+                logger.info("✅ Image saved without compression (already under max_size_bytes)")
         else:
             logger.error(f"❌ {title} Failed to download image from {image_url}")
     else:
@@ -170,13 +176,12 @@ def complete_games_images():
     for game in games:
         try:
             print(f"Fetching image for {game.slug}")
-            get_game_image(game.title, game.slug, game)
-            game.save()
+            get_game_image(game.title, game.slug)
         except Exception as e:
             logger.warning(f"Failed to fetch/save image for {game.slug}: {e}")
     
     # Recheck if all games now have images
-    return not Game.objects.filter(image="").exists()
+    return not Game.objects.filter(image="", image_failed=False).exists()
 # endregion
 
 
@@ -327,9 +332,6 @@ def get_game(url):
             f"Failed to fetch data. Status code: {response.status_code}")
         return
 
-    if fetch_images and not game.image and not game.image_failed:
-        executor.submit(get_game_image, title, slug, game)
-
     if not get_game_detail(url, slug, game):
         return
 
@@ -341,6 +343,10 @@ def get_game(url):
     game.user_score = user_score
     game.user_score_count = user_score_count
     game.save()
+    
+    if fetch_images and not game.image and not game.image_failed:
+        executor.submit(get_game_image, title, slug)
+        
     return True
 # endregion
 
