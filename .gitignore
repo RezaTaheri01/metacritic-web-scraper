@@ -160,3 +160,4 @@ cython_debug/
 #.idea/
 /scraper/images
 scraper/failed_slugs.txt
+/scraper/games/migrations
