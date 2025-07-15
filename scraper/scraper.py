@@ -43,8 +43,8 @@ headers = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
 }
 
-retry_delay = 30
-crawl_delay = 12
+retry_delay = 16
+crawl_delay = 6
 delay_plus = 4
 
 last_page = 574
@@ -52,7 +52,10 @@ max_retries = 1_000
 fetch_images = True
 
 # Global thread executor (reuse across calls)
-executor = ThreadPoolExecutor(max_workers=2)  # You can adjust the worker count
+executor = None
+max_workers = 2
+
+current_line = 0
 # endregion
 
 
@@ -62,6 +65,23 @@ logging.basicConfig(filename='scraper.log', level=logging.INFO,
 
 # Get a logger instance
 logger = logging.getLogger(__name__)
+
+# region Save
+def save_failed_pages(pg):
+    with open("failed_pages.txt", "a") as f:
+        f.write(f"{pg}\n")
+
+
+def save_failed_slugs(slug):
+    with open("failed_slugs.txt", "a") as f:
+        f.write(f"{slug}\n")
+    
+
+def save_games(gs):
+    with open("games.txt", "a") as f:
+        for g in gs:
+            f.write(f"{g}\n")
+# endregion
 
 
 def main():
@@ -76,25 +96,66 @@ def main():
         print(f"Page {page} started.")
 
         games = get_games_page_html(games_url.format(page))
+        
         if games:
             random.shuffle(games)
+            if len(games) != 24:
+                save_failed_pages(page)
+                logger.warning(f"Page {page} does not include 24 urls! Found: {len(games)}")
+
             print(games)
-            for game in games:
-                print(f"Fetching {game}...")
-                if get_game(base_url + game) != False:
-                    time.sleep(random.uniform(crawl_delay, crawl_delay + delay_plus))
-
-        print(f"Page {page} fetched.")
-
+            for g in games:
+                print(f"Fetching {g}...")
+                
+                if g[-1] != "/":
+                    g += "/"
+                slug = g.split("/")[-2]
+                
+                response = get_game(base_url + g, slug)
+                if response == None:
+                    save_failed_slugs(slug)
+                    logger.warning(f"{slug} return None")     
+        else:
+            save_failed_pages(page)
+            logger.warning(f"Page {page} not fetched")
+            
+        print(f"Page {page} fetched")
+        save_games(games)
         pg.page_number = page + 1
         pg.save()
+
+
+def recheck():
+    global current_line
+    if os.path.exists("games.txt"):
+        games_list = []
+        with open("games.txt", "r") as f:
+            games_list = f.readlines()[current_line:]
+            
+        print(f"Duplicates: {len(games_list) - len(set(games_list))}")
+        for g in games_list:
+            g = g[:-1]
+                
+            if g[-1] != "/":
+                g += "/"
+            slug = g.split("/")[-2]
+            
+            response = get_game(base_url + g, slug)
+            if response == True:
+                print(f"{g} Fetched")
+            elif response == None:
+                save_failed_slugs(slug)
+                logger.warning(f"{slug} return None")
+
+                
+            current_line += 1
 
 
 # List of games on each page
 def get_games_page_html(url):
     time.sleep(random.uniform(crawl_delay, crawl_delay + delay_plus))
     
-    games = []
+    games_links = []
     response = requests.get(url, headers=headers, timeout=10)
 
     if response.status_code == 200:
@@ -103,11 +164,11 @@ def get_games_page_html(url):
             "a", class_="c-finderProductCard_container")
 
         for link in game_links:
-            games.append(link['href'])
+            games_links.append(link['href'])
     else:
-        print(f"Failed to fetch data. Status code: {response.status_code}")
+        logger.error(f"Failed to fetch games list. Status code: {response.status_code}")
 
-    return games
+    return games_links
 
 
 # region Images
@@ -122,9 +183,9 @@ def get_game_image(title: str, slug: str):
                 return results[0].get("background_image")
         return None
 
-    image_url = fetch_image(title) or fetch_image(slug) or fetch_image(slug.replace("-", " "))
+    image_url = fetch_image(title) or fetch_image(slug.replace("-", " ")) or fetch_image(slug)
     try:
-        game = Game.objects.get(slug=slug)
+        current_game = Game.objects.get(slug=slug)
     except:
         return
 
@@ -132,7 +193,7 @@ def get_game_image(title: str, slug: str):
         img_response = requests.get(image_url)
         if img_response.status_code == 200:
             original_size = len(img_response.content)
-            logger.info(f"📦{title} Original image size: {original_size / 1024:.2f} KB")
+            # logger.info(f"📦{title} Original image size: {original_size / 1024:.2f} KB")
 
             if original_size > max_size_bytes:
                 try:
@@ -149,36 +210,36 @@ def get_game_image(title: str, slug: str):
                     buffer = BytesIO()
                     img.save(buffer, format='JPEG', quality=70)
                     buffer.seek(0)
-                    logger.info("📉 Image compressed because it was larger than max_size_bytes")
-                    game.image.save(f"{slug}.jpg", ContentFile(buffer.read()), save=True)
-                    game.save()
+                    # logger.info("📉 Image compressed because it was larger than max_size_bytes")
+                    current_game.image.save(f"{slug}.jpg", ContentFile(buffer.read()), save=True)
+                    current_game.save()
                 except Exception as e:
                     logger.error(f"❌ {slug} Error compressing image: {e}")
             else:
                 # Image is small enough, save as-is
-                game.image.save(f"{slug}.jpg", ContentFile(img_response.content), save=True)
-                game.save()
-                logger.info("✅ Image saved without compression (already under max_size_bytes)")
+                current_game.image.save(f"{slug}.jpg", ContentFile(img_response.content), save=True)
+                current_game.save()
+                # logger.info("✅ Image saved without compression (already under max_size_bytes)")
         else:
             logger.error(f"❌ {title} Failed to download image from {image_url}")
     else:
-        game.image_failed = True
-        game.save()
+        current_game.image_failed = True
+        current_game.save()
         logger.error(f"❌ {title} No image found for '{title}' or '{slug}'")
 
 
 def complete_games_images():
-    games = Game.objects.filter(image="", image_failed=False)
+    games_no_img = Game.objects.filter(image="", image_failed=False)
     
-    if not games.exists():
+    if not games_no_img.exists():
         return True  # All images already set
     
-    for game in games:
+    for game_no_img in games_no_img:
         try:
-            print(f"Fetching image for {game.slug}")
-            get_game_image(game.title, game.slug)
+            print(f"Fetching image for {game_no_img.slug}")
+            get_game_image(game_no_img.title, game_no_img.slug)
         except Exception as e:
-            logger.warning(f"Failed to fetch/save image for {game.slug}: {e}")
+            logger.warning(f"Failed to fetch/save image for {game_no_img.slug}: {e}")
     
     # Recheck if all games now have images
     return not Game.objects.filter(image="", image_failed=False).exists()
@@ -186,11 +247,6 @@ def complete_games_images():
 
 
 # region Get Single Game
-def save_failed_slugs(slug):
-    with open("failed_slugs.txt", "a") as f:
-        f.write(f"{slug}\n")
-    
-    
 def get_game_detail(url, slug, game: Game) -> bool:
     """
     Return True if data is extracted and assigned to the Game instance.
@@ -202,11 +258,9 @@ def get_game_detail(url, slug, game: Game) -> bool:
         response = requests.get(url + "details/", headers=headers, timeout=10)
     except requests.exceptions.RequestException as e:
         logger.error(f"{url} - Request failed: {e}")
-        save_failed_slugs(slug)
         return False
 
     if response.status_code != 200:
-        
         logger.error(
             f"{url} - Failed to fetch details. Status code: {response.status_code}")
         return False
@@ -272,21 +326,25 @@ def get_game_detail(url, slug, game: Game) -> bool:
         return True
     except Exception as e:
         logger.error(f"{url} - Error parsing details: {e}")
-        save_failed_slugs(slug)
         return False
 
 
-def get_game(url):
+def get_game(url, slug):
     # Search for duplicate & Create a new instance
-    slug = url.split("/")[-2]
     game: Game = Game.objects.filter(slug=slug).first()
     if game:
         return False
+    time.sleep(random.uniform(crawl_delay, crawl_delay + delay_plus))
     game = Game()
 
     # Get title and scores
-    response = requests.get(url, headers=headers, timeout=10)
-
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+    except requests.exceptions.RequestException as e:
+        save_failed_slugs(slug)
+        logger.error(f"{url} - Request failed: {e}")
+        return None
+    
     if response.status_code == 200:
         try:
             soup = BeautifulSoup(response.text, "html.parser")
@@ -326,23 +384,29 @@ def get_game(url):
             logger.error(f"{slug}\n{e}")
             save_failed_slugs(slug)
             return
-
     else:
+        save_failed_slugs(slug)
         logger.error(
             f"Failed to fetch data. Status code: {response.status_code}")
-        return
+        return None
 
     if not get_game_detail(url, slug, game):
-        return
+        save_failed_slugs(slug)
+        return None
 
-    game.title = title
-    game.link = url
-    game.slug = slug
-    game.meta_score = meta_score
-    game.meta_score_count = meta_score_count
-    game.user_score = user_score
-    game.user_score_count = user_score_count
-    game.save()
+    try:
+        game.title = title
+        game.link = url
+        game.slug = slug
+        game.meta_score = meta_score
+        game.meta_score_count = meta_score_count
+        game.user_score = user_score
+        game.user_score_count = user_score_count
+        game.save()
+    except Exception as e:
+        save_failed_slugs(slug)
+        logger.error(f"❌ Failed to save game {slug}: {e}")
+        return None
     
     if fetch_images and not game.image and not game.image_failed:
         executor.submit(get_game_image, title, slug)
@@ -363,6 +427,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Run main() with get_game_image"
     )
+    parser.add_argument(
+        "--recheck",
+        action="store_true",
+        help="recheck from games.txt"
+    )
     args = parser.parse_args()
     
     retries = 0
@@ -372,7 +441,12 @@ if __name__ == "__main__":
                 if complete_games_images():
                     break
             elif args.all:
+                executor = ThreadPoolExecutor(max_workers=max_workers)  # You can adjust the worker count
                 main()
+                break
+            elif args.recheck:
+                fetch_images = False
+                recheck()
                 break
             else: # Without images
                 fetch_images = False
@@ -387,3 +461,6 @@ if __name__ == "__main__":
                 time.sleep(random.uniform(retry_delay, retry_delay + delay_plus))
             else:
                 logger.critical("Max retries exceeded. Exiting.")
+        finally:
+            if executor:
+                executor.shutdown(wait=True)
