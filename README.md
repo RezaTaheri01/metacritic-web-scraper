@@ -4,6 +4,8 @@ A robust, database-backed Python scraper that collects video game data from [Met
 
 ---
 
+![Preview](assets/preview.png)
+
 ## 📌 Features
 
 - Scrapes games from **Metacritic** (title, scores, summary, platform, release date, etc.)
