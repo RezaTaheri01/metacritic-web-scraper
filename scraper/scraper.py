@@ -66,6 +66,7 @@ logging.basicConfig(filename='scraper.log', level=logging.INFO,
 # Get a logger instance
 logger = logging.getLogger(__name__)
 
+
 # region Save
 def save_failed_pages(pg):
     with open("failed_pages.txt", "a") as f:
@@ -133,7 +134,7 @@ def recheck():
             games_list = f.readlines()[current_line:]
             
         print(f"Duplicates: {len(games_list) - len(set(games_list))}")
-        for g in games_list:
+        for g in set(games_list):
             g = g[:-1]
                 
             if g[-1] != "/":
@@ -145,7 +146,7 @@ def recheck():
                 print(f"{g} Fetched")
             elif response == None:
                 save_failed_slugs(slug)
-                logger.warning(f"{slug} return None")
+                logger.warning(f"get_game on {slug} return None")
 
                 
             current_line += 1
@@ -341,7 +342,6 @@ def get_game(url, slug):
     try:
         response = requests.get(url, headers=headers, timeout=10)
     except requests.exceptions.RequestException as e:
-        save_failed_slugs(slug)
         logger.error(f"{url} - Request failed: {e}")
         return None
     
@@ -382,8 +382,7 @@ def get_game(url, slug):
 
         except Exception as e:
             logger.error(f"{slug}\n{e}")
-            save_failed_slugs(slug)
-            return
+            return None
     else:
         save_failed_slugs(slug)
         logger.error(
@@ -391,7 +390,6 @@ def get_game(url, slug):
         return None
 
     if not get_game_detail(url, slug, game):
-        save_failed_slugs(slug)
         return None
 
     try:
@@ -404,7 +402,6 @@ def get_game(url, slug):
         game.user_score_count = user_score_count
         game.save()
     except Exception as e:
-        save_failed_slugs(slug)
         logger.error(f"❌ Failed to save game {slug}: {e}")
         return None
     
