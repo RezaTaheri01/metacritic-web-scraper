@@ -71,7 +71,7 @@
         <ul class="pagination">
             {% if page_obj.has_previous %}
             <li class="page-item">
-            <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+            <a class="page-link" href="?search={{ request.GET.search }}&page={{ page_obj.previous_page_number }}">Previous</a>
             </li>
             {% endif %}
 
@@ -82,13 +82,13 @@
             {% elif p == page_obj.number %}
             <li class="page-item active" aria-current="page"><span class="page-link">{{ p }}</span></li>
             {% else %}
-            <li class="page-item"><a class="page-link" href="?page={{ p }}">{{ p }}</a></li>
+            <li class="page-item"><a class="page-link" href="?search={{ request.GET.search }}&page={{ p }}">{{ p }}</a></li>
             {% endif %}
             {% endfor %}
 
             {% if page_obj.has_next %}
             <li class="page-item">
-            <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+            <a class="page-link" href="?search={{ request.GET.search }}&page={{ page_obj.next_page_number }}">Next</a>
             </li>
             {% endif %}
         </ul>

@@ -26,7 +26,7 @@ def smart_page_range(page_obj, paginator, delta=2):
 
     # Add ellipsis between first pages and middle pages
     if middle_pages and middle_pages[0] - first_pages[-1] > 1:
-        pages.append('...')
+        pages.append("...")
 
     # Add middle pages
     pages.extend(middle_pages)
@@ -34,12 +34,13 @@ def smart_page_range(page_obj, paginator, delta=2):
     # Add last pages without ellipsis
     if last_pages:
         if current not in last_pages:
-            pages.append('..')
+            pages.append("..")
         # Only add last pages that are not already in middle_pages
         for page in last_pages:
             if page not in middle_pages:
                 pages.append(page)
 
+    
     # Remove duplicates while preserving order
     seen = set()
     result = []
@@ -48,4 +49,9 @@ def smart_page_range(page_obj, paginator, delta=2):
             result.append(p)
             seen.add(p)
     
+    if result[-1] == "..":
+        result.pop()
+    if result[0] == "...":
+        result.pop(0)
+        
     return result
