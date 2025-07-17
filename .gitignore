@@ -163,3 +163,4 @@ scraper/failed_slugs.txt
 /scraper/games/migrations
 scraper/status
 scraper/games.txt
+scraper/failed_pages.txt
